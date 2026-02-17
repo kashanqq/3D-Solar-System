@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="3D Solar System/3D Solar System.vcxproj" Id="520c82b7-dd83-47a7-a160-34ff8e6e85db" />
+</Solution>
