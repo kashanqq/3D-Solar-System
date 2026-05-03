@@ -10,47 +10,59 @@
 
 class Shader {
 public:
-	unsigned int ID = 0;
+    unsigned int ID = 0;
 
-	Shader(const char* vertexPath, const char* fragmentPath) {
-		unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-		glShaderSource(vertexShader, 1, &vertexPath, NULL);
-		glCompileShader(vertexShader);
+    Shader(const char* vertexPath, const char* fragmentPath) {
 
-		int success;
-		char infoLog[512];
+        std::string vertexCode;
+        std::string fragmentCode;
+        std::ifstream vShaderFile;
+        std::ifstream fShaderFile;
 
-		glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+        vShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        fShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        try {
 
-		if (!success) {
-			glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-			std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+            vShaderFile.open(vertexPath);
+            fShaderFile.open(fragmentPath);
+            std::stringstream vShaderStream, fShaderStream;
 
-		}
+            vShaderStream << vShaderFile.rdbuf();
+            fShaderStream << fShaderFile.rdbuf();
 
-		unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-		glShaderSource(fragmentShader, 1, &fragmentPath, NULL);
-		glCompileShader(fragmentShader);
+            vShaderFile.close();
+            fShaderFile.close();
 
-		glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+            vertexCode = vShaderStream.str();
+            fragmentCode = fShaderStream.str();
+        }
+        catch (std::ifstream::failure& e) {
+            std::cout << "ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ: " << e.what() << "\n"
+                      << "Paths: " << vertexPath << ", " << fragmentPath << std::endl;
+        }
 
-		if (!success) {
-			glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-			std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-		}
+        const char* vShaderCode = vertexCode.c_str();
+        const char* fShaderCode = fragmentCode.c_str();
 
-		unsigned int shaderProgram = glCreateProgram();
+        unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertexShader, 1, &vShaderCode, NULL);
+        glCompileShader(vertexShader);
+        checkCompileErrors(vertexShader, "VERTEX");
 
-		glAttachShader(shaderProgram, vertexShader);
-		glAttachShader(shaderProgram, fragmentShader);
-		glLinkProgram(shaderProgram);
+        unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragmentShader, 1, &fShaderCode, NULL);
+        glCompileShader(fragmentShader);
+        checkCompileErrors(fragmentShader, "FRAGMENT");
 
-		ID = shaderProgram;
+        ID = glCreateProgram();
+        glAttachShader(ID, vertexShader);
+        glAttachShader(ID, fragmentShader);
+        glLinkProgram(ID);
+        checkCompileErrors(ID, "PROGRAM");
 
-		glDeleteShader(vertexShader);
-		glDeleteShader(fragmentShader);
-	}
-
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+    }
 	void use() {
 		glUseProgram(ID);
 	}
@@ -76,5 +88,25 @@ public:
 	}
 	void setVec3(const std::string& name, float x, float y, float z) const {
 		glUniform3f(glGetUniformLocation(ID, name.c_str()), x, y, z);
+	}
+
+private:
+	void checkCompileErrors(unsigned int shader, std::string type) {
+		int success;
+		char infoLog[1024];
+		if (type != "PROGRAM") {
+			glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+			if (!success) {
+				glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+				std::cout << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n" << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+			}
+		}
+		else {
+			glGetProgramiv(shader, GL_LINK_STATUS, &success);
+			if (!success) {
+				glGetProgramInfoLog(shader, 1024, NULL, infoLog);
+				std::cout << "ERROR::PROGRAM_LINKING_ERROR of type: " << type << "\n" << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+			}
+		}
 	}
 };

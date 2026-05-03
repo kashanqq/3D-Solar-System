@@ -37,7 +37,7 @@ private:
 		);
 
 		if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-		std:cerr << "Error: " << importer.GetErrorString() << std::endl;
+		std::cerr << "Error: " << importer.GetErrorString() << std::endl;
 		}
 
 		directory = path.substr(0, path.find_last_of('/'));
@@ -109,13 +109,36 @@ private:
 
 		aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-		vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
+		aiString matName;
+		material->Get(AI_MATKEY_NAME, matName);
+		std::cout << "\n=== Material scaner: " << matName.C_Str() << " ===" << std::endl;
+		std::cout << "DIFFUSE textures: " << material->GetTextureCount(aiTextureType_DIFFUSE) << std::endl;
+		std::cout << "BASE_COLOR textures: " << material->GetTextureCount(aiTextureType_BASE_COLOR) << std::endl;
+		std::cout << "NORMALS textures: " << material->GetTextureCount(aiTextureType_NORMALS) << std::endl;
+		std::cout << "HEIGHT textures: " << material->GetTextureCount(aiTextureType_HEIGHT) << std::endl;
+		std::cout << "UNKNOWN textures: " << material->GetTextureCount(aiTextureType_UNKNOWN) << std::endl;
+		std::cout << "=======================================" << std::endl;
+
+
+		vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
 		textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
-		vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+		if (diffuseMaps.empty())
+		{
+			vector<Texture> baseMaps = loadMaterialTextures(material, aiTextureType_BASE_COLOR, "texture_diffuse", scene);
+			textures.insert(textures.end(), baseMaps.begin(), baseMaps.end());
+		}
+
+		vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_NORMALS, "texture_normal", scene);
 		textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
-		vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
+		if (normalMaps.empty())
+		{
+			vector<Texture> normalMaps2 = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
+			textures.insert(textures.end(), normalMaps2.begin(), normalMaps2.end());
+		}
+
+		vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
 		textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 
 		return Mesh(vertices, indices, textures);
@@ -161,7 +184,7 @@ private:
 		return textureID;
 	}
 
-	vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName)
+	vector<Texture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, string typeName, const aiScene* scene)
 	{
 		vector<Texture> textures;
 		for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)
@@ -169,21 +192,68 @@ private:
 			aiString str;
 			mat->GetTexture(type, i, &str);
 
+			std::cout << "Trying to load texture: " << str.C_Str() << " (Type: " << typeName << ")" << std::endl;
+
 			Texture texture;
-			for (unsigned int i = 0; i < textures.size(); i++) {
-				if (textures[i].id == texture.id) {
-					texture.id = 0;
-					texture.path = "";
-					texture.type = "";
-					return textures;
-				}
-			}
-			texture.id = TextureFromFile(str.C_Str(), this->directory);
 			texture.type = typeName;
 			texture.path = str.C_Str();
+
+			// Check, if FBX already have texture
+			const aiTexture* embeddedTexture = scene->GetEmbeddedTexture(str.C_Str());
+
+			if (embeddedTexture) {
+				// Download from RAM
+				std::cout << "SUCCESS: Texture found in memory!" << std::endl;
+				texture.id = TextureFromMemory(embeddedTexture);
+			} else {
+				std::cout << "WARNING: Not in memory, trying to find on disk..." << std::endl;
+				texture.id = TextureFromFile(str.C_Str(), this->directory);
+			}
+
 			textures.push_back(texture);
 		}
 		return textures;
+	}
+
+	unsigned int TextureFromMemory(const aiTexture* texture)
+	{
+		unsigned int textureID;
+		glGenTextures(1, &textureID);
+
+		int width, height, nrComponents;
+		unsigned char* data = nullptr;
+
+		if (texture->mHeight == 0) {
+			data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(texture->pcData), texture->mWidth, &width, &height, &nrComponents, 0);
+		}
+		else {
+			data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(texture->pcData), texture->mWidth * texture->mHeight * 4, &width, &height, &nrComponents, 0);
+		}
+
+		if (data)
+		{
+			GLenum format;
+			if (nrComponents == 1) format = GL_RED;
+			else if (nrComponents == 3) format = GL_RGB;
+			else if (nrComponents == 4) format = GL_RGBA;
+
+			glBindTexture(GL_TEXTURE_2D, textureID);
+			glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+			glGenerateMipmap(GL_TEXTURE_2D);
+
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+			stbi_image_free(data);
+		}
+		else
+		{
+			std::cout << "Failed to load embedded texture!" << std::endl;
+		}
+
+		return textureID;
 	}
 	
 };

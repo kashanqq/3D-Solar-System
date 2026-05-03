@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(Solar-System)
 
+set(CMAKE_TOOLCHAIN_FILE "$ENV{HOME}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(assimp CONFIG REQUIRED)
